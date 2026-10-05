@@ -59,24 +59,449 @@ const defaultPrayerData: PrayerData = {
 };
 
 export default function Home() {
-  const [now, setNow] = useState(new Date());
+  const [now, setNow] = useState<Date | null>(null);
+  const [showNotificationSettings, setShowNotificationSettings] =
+    useState(false);
+
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [notificationPermission, setNotificationPermission] =
+    useState<NotificationPermission>("default");
+
+  const [reminderMinutes, setReminderMinutes] = useState("1");
+
+  const [selectedPrayers, setSelectedPrayers] = useState({
+    fajr: true,
+    zuhr: true,
+    asr: true,
+    maghrib: true,
+    isha: true,
+    jumuah: true,
+  });
   const [prayerData, setPrayerData] =
     useState<PrayerData>(defaultPrayerData);
 
+/* --------------------------------------------------
+ * LIVE CLOCK
+ * -------------------------------------------------- */
+
+useEffect(() => {
+  setNow(new Date());
+
+  const timer = setInterval(() => {
+    setNow(new Date());
+  }, 1000);
+
+  return () => clearInterval(timer);
+}, []);
+
+/* --------------------------------------------------
+ * CHECK NOTIFICATION PERMISSION
+ * -------------------------------------------------- */
+
+useEffect(() => {
+  if ("Notification" in window) {
+    setNotificationPermission(Notification.permission);
+
+    if (Notification.permission === "granted") {
+      setNotificationsEnabled(true);
+    }
+  }
+}, []);
+
+
+useEffect(() => {
+  if (!("serviceWorker" in navigator)) {
+    console.warn("Service workers are not supported.");
+    return;
+  }
+
+  navigator.serviceWorker
+    .register("/sw.js")
+    .then((registration) => {
+      console.log(
+        "Service Worker registered:",
+        registration.scope
+      );
+    })
+    .catch((error) => {
+      console.error(
+        "Service Worker registration failed:",
+        error
+      );
+    });
+}, []);
+/* --------------------------------------------------
+ * NOTIFICATION SETTINGS
+ * -------------------------------------------------- */
+
+function togglePrayer(
+  prayer: keyof typeof selectedPrayers
+) {
+  setSelectedPrayers((current) => ({
+    ...current,
+    [prayer]: !current[prayer],
+  }));
+}
+async function enableNotifications() {
+  if (!("Notification" in window)) {
+    alert(
+      "This browser does not support notifications."
+    );
+    return;
+  }
+
+  if (!("serviceWorker" in navigator)) {
+    alert(
+      "This browser does not support background notifications."
+    );
+    return;
+  }
+
+  if (!("PushManager" in window)) {
+    alert(
+      "This browser does not support Web Push."
+    );
+    return;
+  }
+
+  try {
+    const permission =
+      await Notification.requestPermission();
+
+    setNotificationPermission(permission);
+
+    if (permission !== "granted") {
+      setNotificationsEnabled(false);
+
+      if (permission === "denied") {
+        alert(
+          "Notifications are blocked. Please enable them in your browser settings."
+        );
+      }
+
+      return;
+    }
+
+    /*
+     * Get the registered Service Worker.
+     */
+    const registration =
+      await navigator.serviceWorker.ready;
+
+    /*
+     * Get the VAPID public key.
+     */
+    const vapidPublicKey =
+      process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+
+    if (!vapidPublicKey) {
+      throw new Error(
+        "NEXT_PUBLIC_VAPID_PUBLIC_KEY is missing."
+      );
+    }
+
+    /*
+     * Convert VAPID key to Uint8Array.
+     */
+    function urlBase64ToUint8Array(
+      base64String: string
+    ) {
+      const padding =
+        "=".repeat(
+          (4 - (base64String.length % 4)) % 4
+        );
+
+      const base64 =
+        (
+          base64String +
+          padding
+        )
+          .replace(/-/g, "+")
+          .replace(/_/g, "/");
+
+      const rawData =
+        window.atob(base64);
+
+      return Uint8Array.from(
+        [...rawData].map(
+          (char) => char.charCodeAt(0)
+        )
+      );
+    }
+
+    /*
+     * Create or retrieve push subscription.
+     */
+    let subscription =
+      await registration.pushManager.getSubscription();
+
+    if (!subscription) {
+      subscription =
+        await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+
+          applicationServerKey:
+            urlBase64ToUint8Array(
+              vapidPublicKey
+            ),
+        });
+    }
+
+    /*
+     * Send subscription to our Next.js server.
+     */
+    const response = await fetch(
+      "/api/push/subscribe",
+      {
+        method: "POST",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+
+        body: JSON.stringify(
+          subscription.toJSON()
+        ),
+      }
+    );
+
+    const result =
+      await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        result.error ||
+          "Failed to save push subscription."
+      );
+    }
+
+    setNotificationsEnabled(true);
+
+    new Notification(
+      "🔔 Al Rehman Masjid",
+      {
+        body:
+          "Background prayer notifications have been enabled successfully.",
+      }
+    );
+
+    setShowNotificationSettings(true);
+  } catch (error) {
+    console.error(
+      "Web Push setup error:",
+      error
+    );
+
+    alert(
+      error instanceof Error
+        ? error.message
+        : "Failed to enable notifications."
+    );
+  }
+}
+
+/* --------------------------------------------------
+ * PRAYER NOTIFICATION SCHEDULER
+ * -------------------------------------------------- */
+
+type PrayerKey =
+  | "fajr"
+  | "zuhr"
+  | "asr"
+  | "maghrib"
+  | "isha"
+  | "jumuah";
+
+const prayerLabels: Record<PrayerKey, string> = {
+  fajr: "Fajr",
+  zuhr: "Zuhr",
+  asr: "Asr",
+  maghrib: "Maghrib",
+  isha: "Isha'",
+  jumuah: "Jumu'ah",
+};
+
+function parsePrayerTime(
+  prayer: PrayerKey,
+  time: string,
+  date: Date
+) {
+  const match = time.trim().match(/^(\d{1,2}):(\d{2})$/);
+
+  if (!match) {
+    return null;
+  }
+
+  let hours = Number(match[1]);
+  const minutes = Number(match[2]);
+
+  if (
+    hours < 1 ||
+    hours > 12 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null;
+  }
+const pmPrayers: PrayerKey[] = [
+  "zuhr",
+  "jumuah",
+  "asr",
+  "maghrib",
+  "isha",
+];
+
+const isPM = pmPrayers.includes(prayer);
+
+if (isPM) {
+  if (hours !== 12) {
+    hours += 12;
+  }
+} else {
+  if (hours === 12) {
+    hours = 0;
+  }
+}
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    hours,
+    minutes,
+    0,
+    0
+  );
+}
+
+
+function checkPrayerNotifications() {
+  if (!notificationsEnabled) {
+    return;
+  }
+
+  if (notificationPermission !== "granted") {
+    return;
+  }
+
+  const now = new Date();
+
+  const prayersToCheck: PrayerKey[] = [
+    "fajr",
+    "zuhr",
+    "asr",
+    "maghrib",
+    "isha",
+    "jumuah",
+  ];
+
+  prayersToCheck.forEach((prayer) => {
+    if (!selectedPrayers[prayer]) {
+      return;
+    }
+
+    /*
+     * Jumu'ah is only relevant on Friday.
+     */
+    if (prayer === "jumuah" && now.getDay() !== 5) {
+      return;
+    }
+
+    const time = prayerData[prayer];
+
+    const prayerDate = parsePrayerTime(
+      prayer,
+      time,
+      now
+    );
+
+    if (!prayerDate) {
+      return;
+    }
+
+    const reminderTime = new Date(
+      prayerDate.getTime() -
+        Number(reminderMinutes) * 60 * 1000
+    );
+
+    const difference =
+      now.getTime() - reminderTime.getTime();
+
+    /*
+     * Notification window:
+     *
+     * 0 to 30 seconds after the scheduled reminder.
+     *
+     * This prevents the notification from firing repeatedly.
+     */
+    if (difference >= 0 && difference < 30_000) {
+      sendPrayerNotification(
+        prayer,
+        time
+      );
+    }
+  });
+}
+
+function sendPrayerNotification(
+  prayer: PrayerKey,
+  time: string
+) {
+  const today = new Date()
+    .toISOString()
+    .split("T")[0];
+
+  const notificationKey =
+    `prayer-notification-${today}-${prayer}-${time}-${reminderMinutes}`;
+
   /*
-   * --------------------------------------------------
-   * LIVE CLOCK
-   * --------------------------------------------------
+   * Prevent duplicate notifications.
    */
+  if (localStorage.getItem(notificationKey)) {
+    return;
+  }
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(new Date());
-    }, 1000);
+  localStorage.setItem(notificationKey, "sent");
 
-    return () => clearInterval(timer);
-  }, []);
+  const label = prayerLabels[prayer];
 
+  new Notification(`🔔 ${label} Prayer Soon`, {
+    body: `${label} prayer starts at ${time}.`,
+    tag: notificationKey,
+  });
+}
+
+useEffect(() => {
+  if (!notificationsEnabled) {
+    return;
+  }
+
+  if (notificationPermission !== "granted") {
+    return;
+  }
+
+  /*
+   * Check immediately.
+   */
+  checkPrayerNotifications();
+
+  /*
+   * Then check every 15 seconds.
+   */
+  const scheduler = setInterval(() => {
+    checkPrayerNotifications();
+  }, 15_000);
+
+  return () => {
+    clearInterval(scheduler);
+  };
+}, [
+  notificationsEnabled,
+  notificationPermission,
+  reminderMinutes,
+  selectedPrayers,
+  prayerData,
+]);
   /*
    * --------------------------------------------------
    * LOAD PRAYER TIMES + SUPABASE REALTIME
@@ -163,23 +588,33 @@ export default function Home() {
    * DATE / CLOCK
    * --------------------------------------------------
    */
+const month = now
+  ? now
+      .toLocaleDateString("en-US", {
+        month: "long",
+      })
+      .toUpperCase()
+  : "";
 
-  const month = now
-    .toLocaleDateString("en-US", {
-      month: "long",
-    })
-    .toUpperCase();
+const day = now
+  ? now
+      .toLocaleDateString("en-US", {
+        weekday: "short",
+      })
+      .toUpperCase()
+  : "";
 
-  const day = now
-    .toLocaleDateString("en-US", {
-      weekday: "short",
-    })
-    .toUpperCase();
+const gregorianDay = now
+  ? pad(now.getDate())
+  : "--";
 
-  const gregorianDay = pad(now.getDate());
-  const gregorianMonth = pad(now.getMonth() + 1);
-  const gregorianYear = now.getFullYear();
+const gregorianMonth = now
+  ? pad(now.getMonth() + 1)
+  : "--";
 
+const gregorianYear = now
+  ? now.getFullYear()
+  : "----";
   /*
    * --------------------------------------------------
    * PRAYER LIST
@@ -317,8 +752,8 @@ export default function Home() {
               </span>
 
               <span className="live-time">
-                {formatTime(now)}
-              </span>
+  {now ? formatTime(now) : "--:--"}
+</span>
             </div>
 
             <div className="central-calligraphy">
@@ -409,26 +844,170 @@ export default function Home() {
         {/* FOOTER */}
 
         <footer className="board-footer">
+          <span>🕌 AL REHMAN MASJID PRAYER &amp; JAMA'AT INFORMATION</span>
 
-          <span>
-            🕌 AL REHMAN MASJID PRAYER &amp; JAMA'AT INFORMATION
-          </span>
-
-          <a
-            href="/admin"
-            className="admin-entry-link"
+          <button
+            className="notification-button"
+            onClick={() =>
+              setShowNotificationSettings((current) => !current)
+            }
           >
+            🔔 Notifications
+          </button>
+
+          <a href="/admin" className="admin-entry-link">
             ADMIN
           </a>
 
           <span>LIVE</span>
-
         </footer>
 
       </section>
+      {showNotificationSettings && (
+  <section className="notification-settings">
+    <div className="notification-header">
+      <div>
+        <h2>🔔 Prayer Notifications</h2>
+        <p>
+          Get reminders before prayer and Jama'at timings.
+        </p>
+      </div>
+
+      <button
+        className="notification-close"
+        onClick={() => setShowNotificationSettings(false)}
+        aria-label="Close notification settings"
+      >
+        ✕
+      </button>
+    </div>
+
+    <div className="notification-enable">
+      <div>
+        <strong>
+          {notificationsEnabled
+            ? "Notifications Enabled"
+            : "Get Prayer Reminders"}
+        </strong>
+
+<span>
+  {notificationsEnabled
+    ? "You will receive prayer reminders on this device."
+    : notificationPermission === "denied"
+      ? "Notifications are blocked. Please enable them in browser settings."
+      : "Receive reminders before prayers and Jama'at."}
+</span>
+      </div>
+
+
+<button
+  className="notification-enable-button"
+  onClick={enableNotifications}
+  disabled={notificationsEnabled}
+>
+  {notificationsEnabled
+    ? "✓ Notifications Enabled"
+    : notificationPermission === "denied"
+      ? "Notifications Blocked"
+      : "Enable Notifications"}
+</button>
+    </div>
+
+    <div className="notification-options">
+      <div className="notification-option-group">
+        <h3>Reminder time</h3>
+
+        <select
+          value={reminderMinutes}
+          onChange={(e) => setReminderMinutes(e.target.value)}
+        >
+          <option value="5">5 minutes before</option>
+          <option value="10">10 minutes before</option>
+          <option value="15">15 minutes before</option>
+          <option value="30">30 minutes before</option>
+        </select>
+      </div>
+
+      <div className="notification-option-group">
+        <h3>Prayers</h3>
+
+        <div className="prayer-checkboxes">
+
+          <label>
+            <input
+              type="checkbox"
+              checked={selectedPrayers.fajr}
+              onChange={() => togglePrayer("fajr")}
+            />
+            Fajr
+          </label>
+
+          <label>
+            <input
+              type="checkbox"
+              checked={selectedPrayers.zuhr}
+              onChange={() => togglePrayer("zuhr")}
+            />
+            Zuhr
+          </label>
+
+          <label>
+            <input
+              type="checkbox"
+              checked={selectedPrayers.asr}
+              onChange={() => togglePrayer("asr")}
+            />
+            Asr
+          </label>
+
+          <label>
+            <input
+              type="checkbox"
+              checked={selectedPrayers.maghrib}
+              onChange={() => togglePrayer("maghrib")}
+            />
+            Maghrib
+          </label>
+
+          <label>
+            <input
+              type="checkbox"
+              checked={selectedPrayers.isha}
+              onChange={() => togglePrayer("isha")}
+            />
+            Isha'
+          </label>
+
+          <label>
+            <input
+              type="checkbox"
+              checked={selectedPrayers.jumuah}
+              onChange={() => togglePrayer("jumuah")}
+            />
+            Jumu'ah
+          </label>
+
+        </div>
+      </div>
+    </div>
+
+    <div className="notification-preview">
+      <span>Preview</span>
+
+      <strong>
+        🔔 Zuhr Prayer Soon
+      </strong>
+
+      <p>
+        Zuhr prayer starts at {prayerData.zuhr}.
+        Jama'at timing will be added in the next step.
+      </p>
+    </div>
+  </section>
+)}
 
       <div className="mobile-note">
-        <strong>Masjid Live Board</strong>
+        <strong>AL REHMAN Masjid Live Board</strong>
 
         <span>
           Powered by MAPOS.
