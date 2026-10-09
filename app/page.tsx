@@ -818,7 +818,7 @@ const gregorianYear = now
         {/* FOOTER */}
 
         <footer className="board-footer">
-          <span>🕌 AL REHMAN MASJID-SIR SYED COLONY UPPER SOURA-SRINAGAR</span>
+          <span>🕌 AL REHMAN MASJID - SIR SYED COLONY - UPPER SOURA - SRINAGAR</span>
 
           <button
             className="notification-button"

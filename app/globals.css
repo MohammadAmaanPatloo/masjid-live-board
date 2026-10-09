@@ -778,3 +778,86 @@ body {
     font-size: clamp(19px, 5vw, 24px);
   }
 }
+
+
+
+/* ===== MOBILE FOOTER BUTTON FIX ===== */
+@media screen and (max-width: 600px) {
+  .board-footer {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px;
+  }
+
+  /* Masjid address gets its own full-width row */
+  .board-footer > span:first-child {
+    grid-column: 1 / -1;
+    min-width: 0;
+    width: 100%;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+  }
+
+  /* Notifications button */
+  .board-footer .notification-button {
+    grid-column: 1;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 12px 6px;
+    font-size: clamp(12px, 3.5vw, 15px);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: center;
+  }
+
+  /* Admin button */
+  .board-footer .admin-entry-link {
+    grid-column: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 12px 6px;
+    font-size: clamp(12px, 3.5vw, 15px);
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  /* Keep any LIVE label from pushing the buttons outside */
+  .board-footer > span:last-child {
+    grid-column: 1 / -1;
+    text-align: center;
+  }
+}
+
+/* ===== MUHAMMAD ARABIC TEXT INSIDE CIRCLE ===== */
+.round-logo.arabic-muhammad {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  padding: 5px;
+  text-align: center;
+  font-size: 25px;
+  line-height: 1.6;
+  white-space: nowrap;
+  overflow: visible;
+}
+
+@media screen and (max-width: 600px) {
+  .round-logo.arabic-muhammad {
+    font-size: 21px;
+    line-height: 1.6;
+    padding: 4px;
+  }
+}
