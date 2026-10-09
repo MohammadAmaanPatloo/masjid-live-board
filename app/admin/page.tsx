@@ -6,11 +6,11 @@ import { createClient } from "../../lib/supabase-browser";
 
 const fields = [
   ["fajr", "Fajr", "5:15"],
-  ["zuhr", "Zuhr", "1:15"],
+  ["zuhar", "Zuhar", "1:15"],
   ["asr", "Asr", "5:20"],
-  ["maghrib", "Maghrib", "6:56"],
-  ["isha", "Isha'", "8:30"],
-  ["jumuah", "Jumu'ah", "1:15"],
+  ["magrib", "Magrib", "6:56"],
+  ["isha", "Isha", "8:30"],
+  ["jumah", "Jumah", "1:15"],
   ["sahr", "Sahr", "4:45"],
   ["iftar", "Iftar", "6:51"],
   ["tomorrow", "Tomorrow", "1:15"]
@@ -53,11 +53,11 @@ useEffect(() => {
 
       setValues({
         fajr: data.fajr,
-        zuhr: data.zuhr,
+        zuhar: data.zuhar,
         asr: data.asr,
-        maghrib: data.maghrib,
+        magrib: data.magrib,
         isha: data.isha,
-        jumuah: data.jumuah,
+        jumah: data.jumah,
         sahr: data.sahr,
         iftar: data.iftar,
         tomorrow: data.tomorrow,
@@ -78,11 +78,11 @@ useEffect(() => {
       .from("prayer_board")
       .update({
         fajr: values.fajr,
-        zuhr: values.zuhr,
+        zuhar: values.zuhar,
         asr: values.asr,
-        maghrib: values.maghrib,
+        magrib: values.magrib,
         isha: values.isha,
-        jumuah: values.jumuah,
+        jumah: values.jumah,
         sahr: values.sahr,
         iftar: values.iftar,
         tomorrow: values.tomorrow,

@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { createClient } from "../../../../lib/supabase-server";
+import { createAdminClient } from "../../../../lib/supabase-admin";
 
 export async function POST(request: Request) {
   try {
-    const subscription = await request.json();
+    const body = await request.json();
+    const subscription = body.subscription ?? body;
 
     if (
       !subscription?.endpoint ||
@@ -16,7 +17,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     const { error } = await supabase
       .from("push_subscriptions")
@@ -27,9 +28,7 @@ export async function POST(request: Request) {
           auth: subscription.keys.auth,
           updated_at: new Date().toISOString(),
         },
-        {
-          onConflict: "endpoint",
-        }
+        { onConflict: "endpoint" }
       );
 
     if (error) {

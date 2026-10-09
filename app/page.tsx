@@ -13,11 +13,11 @@ const boardData = {
   adhanStart: "12:28",
   adhanEnd: "5:02",
 
-  currentPrayer: "ZUHR",
+  currentPrayer: "ZUHAR",
 
   temperature: "27°C",
 
-  tauluTime: "6:09",
+  tuluTime: "6:09",
   zawalTime: "12:28",
   gurubTime: "6:50",
 };
@@ -36,11 +36,11 @@ function formatTime(date: Date) {
 
 type PrayerData = {
   fajr: string;
-  zuhr: string;
+  zuhar: string;
   asr: string;
-  maghrib: string;
+  magrib: string;
   isha: string;
-  jumuah: string;
+  jumah: string;
   sahr: string;
   iftar: string;
   tomorrow: string;
@@ -48,11 +48,11 @@ type PrayerData = {
 
 const defaultPrayerData: PrayerData = {
   fajr: "5:15",
-  zuhr: "1:15",
+  zuhar: "1:15",
   asr: "5:20",
-  maghrib: "6:56",
+  magrib: "6:56",
   isha: "8:30",
-  jumuah: "1:15",
+  jumah: "1:15",
   sahr: "4:45",
   iftar: "6:51",
   tomorrow: "1:15",
@@ -67,15 +67,17 @@ export default function Home() {
   const [notificationPermission, setNotificationPermission] =
     useState<NotificationPermission>("default");
 
-  const [reminderMinutes, setReminderMinutes] = useState("1");
+  const [reminderMinutes, setReminderMinutes] = useState("5");
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [preferencesSaving, setPreferencesSaving] = useState(false);
 
   const [selectedPrayers, setSelectedPrayers] = useState({
     fajr: true,
-    zuhr: true,
+    zuhar: true,
     asr: true,
-    maghrib: true,
+    magrib: true,
     isha: true,
-    jumuah: true,
+    jumah: true,
   });
   const [prayerData, setPrayerData] =
     useState<PrayerData>(defaultPrayerData);
@@ -99,13 +101,55 @@ useEffect(() => {
  * -------------------------------------------------- */
 
 useEffect(() => {
-  if ("Notification" in window) {
-    setNotificationPermission(Notification.permission);
+  async function checkPushSubscription() {
+    if (!("Notification" in window)) {
+      return;
+    }
 
-    if (Notification.permission === "granted") {
-      setNotificationsEnabled(true);
+    const permission = Notification.permission;
+
+    setNotificationPermission(permission);
+
+    // Permission alone does NOT mean Web Push is enabled.
+    if (permission !== "granted") {
+      setNotificationsEnabled(false);
+      return;
+    }
+
+    if (!("serviceWorker" in navigator)) {
+      setNotificationsEnabled(false);
+      return;
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.ready;
+
+      const subscription =
+        await registration.pushManager.getSubscription();
+
+      if (subscription) {
+        console.log(
+          "Existing push subscription found:",
+          subscription.endpoint
+        );
+
+        setNotificationsEnabled(true);
+      } else {
+        console.log("No push subscription found.");
+
+        setNotificationsEnabled(false);
+      }
+    } catch (error) {
+      console.error(
+        "Failed to check push subscription:",
+        error
+      );
+
+      setNotificationsEnabled(false);
     }
   }
+
+  checkPushSubscription();
 }, []);
 
 
@@ -130,18 +174,112 @@ useEffect(() => {
       );
     });
 }, []);
+
+// Load saved notification preferences
+useEffect(() => {
+  void loadPreferences();
+}, []);
+
 /* --------------------------------------------------
  * NOTIFICATION SETTINGS
  * -------------------------------------------------- */
 
-function togglePrayer(
-  prayer: keyof typeof selectedPrayers
+async function savePreferences(
+  minutes = reminderMinutes,
+  prayers = selectedPrayers
 ) {
-  setSelectedPrayers((current) => ({
-    ...current,
-    [prayer]: !current[prayer],
-  }));
+  if (!("serviceWorker" in navigator)) return;
+
+  const registration = await navigator.serviceWorker.ready;
+  const subscription = await registration.pushManager.getSubscription();
+
+  if (!subscription) return;
+
+  setPreferencesSaving(true);
+
+  try {
+    const response = await fetch("/api/push/preferences", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        endpoint: subscription.endpoint,
+        reminder_minutes: Number(minutes),
+        preferences: prayers,
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || "Could not save preferences");
+    }
+  } catch (error) {
+    console.error("Save preferences error:", error);
+    alert(
+      error instanceof Error
+        ? error.message
+        : "Could not save notification preferences"
+    );
+  } finally {
+    setPreferencesSaving(false);
+  }
 }
+
+async function loadPreferences() {
+  try {
+    if (!("serviceWorker" in navigator)) return;
+
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+
+    if (!subscription) return;
+
+    const response = await fetch(
+      `/api/push/preferences?endpoint=${encodeURIComponent(
+        subscription.endpoint
+      )}`
+    );
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || "Could not load preferences");
+    }
+
+    if (result.preferences) {
+      setReminderMinutes(
+        String(result.preferences.reminder_minutes ?? 5)
+      );
+
+      setSelectedPrayers({
+        fajr: result.preferences.fajr ?? true,
+        zuhar: result.preferences.zuhar ?? true,
+        asr: result.preferences.asr ?? true,
+        magrib: result.preferences.magrib ?? true,
+        isha: result.preferences.isha ?? true,
+        jumah: result.preferences.jumah ?? true,
+      });
+    }
+  } catch (error) {
+    console.error("Load preferences error:", error);
+  } finally {
+    setPreferencesLoaded(true);
+  }
+}
+
+function togglePrayer(prayer: keyof typeof selectedPrayers) {
+  setSelectedPrayers((current) => {
+    const updated = {
+      ...current,
+      [prayer]: !current[prayer],
+    };
+
+    void savePreferences(reminderMinutes, updated);
+    return updated;
+  });
+}
+
+
 async function enableNotifications() {
   if (!("Notification" in window)) {
     alert(
@@ -199,7 +337,6 @@ async function enableNotifications() {
         "NEXT_PUBLIC_VAPID_PUBLIC_KEY is missing."
       );
     }
-
     /*
      * Convert VAPID key to Uint8Array.
      */
@@ -247,6 +384,10 @@ async function enableNotifications() {
         });
     }
 
+    console.log("Push subscription created:", {
+  endpoint: subscription.endpoint,
+  keys: subscription.toJSON().keys,
+});
     /*
      * Send subscription to our Next.js server.
      */
@@ -266,9 +407,12 @@ async function enableNotifications() {
       }
     );
 
-    const result =
-      await response.json();
-
+    const result = await response.json();
+console.log("Push subscription API response:", {
+  status: response.status,
+  ok: response.ok,
+  result,
+});
     if (!response.ok) {
       throw new Error(
         result.error ||
@@ -301,207 +445,7 @@ async function enableNotifications() {
   }
 }
 
-/* --------------------------------------------------
- * PRAYER NOTIFICATION SCHEDULER
- * -------------------------------------------------- */
 
-type PrayerKey =
-  | "fajr"
-  | "zuhr"
-  | "asr"
-  | "maghrib"
-  | "isha"
-  | "jumuah";
-
-const prayerLabels: Record<PrayerKey, string> = {
-  fajr: "Fajr",
-  zuhr: "Zuhr",
-  asr: "Asr",
-  maghrib: "Maghrib",
-  isha: "Isha'",
-  jumuah: "Jumu'ah",
-};
-
-function parsePrayerTime(
-  prayer: PrayerKey,
-  time: string,
-  date: Date
-) {
-  const match = time.trim().match(/^(\d{1,2}):(\d{2})$/);
-
-  if (!match) {
-    return null;
-  }
-
-  let hours = Number(match[1]);
-  const minutes = Number(match[2]);
-
-  if (
-    hours < 1 ||
-    hours > 12 ||
-    minutes < 0 ||
-    minutes > 59
-  ) {
-    return null;
-  }
-const pmPrayers: PrayerKey[] = [
-  "zuhr",
-  "jumuah",
-  "asr",
-  "maghrib",
-  "isha",
-];
-
-const isPM = pmPrayers.includes(prayer);
-
-if (isPM) {
-  if (hours !== 12) {
-    hours += 12;
-  }
-} else {
-  if (hours === 12) {
-    hours = 0;
-  }
-}
-  return new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate(),
-    hours,
-    minutes,
-    0,
-    0
-  );
-}
-
-
-function checkPrayerNotifications() {
-  if (!notificationsEnabled) {
-    return;
-  }
-
-  if (notificationPermission !== "granted") {
-    return;
-  }
-
-  const now = new Date();
-
-  const prayersToCheck: PrayerKey[] = [
-    "fajr",
-    "zuhr",
-    "asr",
-    "maghrib",
-    "isha",
-    "jumuah",
-  ];
-
-  prayersToCheck.forEach((prayer) => {
-    if (!selectedPrayers[prayer]) {
-      return;
-    }
-
-    /*
-     * Jumu'ah is only relevant on Friday.
-     */
-    if (prayer === "jumuah" && now.getDay() !== 5) {
-      return;
-    }
-
-    const time = prayerData[prayer];
-
-    const prayerDate = parsePrayerTime(
-      prayer,
-      time,
-      now
-    );
-
-    if (!prayerDate) {
-      return;
-    }
-
-    const reminderTime = new Date(
-      prayerDate.getTime() -
-        Number(reminderMinutes) * 60 * 1000
-    );
-
-    const difference =
-      now.getTime() - reminderTime.getTime();
-
-    /*
-     * Notification window:
-     *
-     * 0 to 30 seconds after the scheduled reminder.
-     *
-     * This prevents the notification from firing repeatedly.
-     */
-    if (difference >= 0 && difference < 30_000) {
-      sendPrayerNotification(
-        prayer,
-        time
-      );
-    }
-  });
-}
-
-function sendPrayerNotification(
-  prayer: PrayerKey,
-  time: string
-) {
-  const today = new Date()
-    .toISOString()
-    .split("T")[0];
-
-  const notificationKey =
-    `prayer-notification-${today}-${prayer}-${time}-${reminderMinutes}`;
-
-  /*
-   * Prevent duplicate notifications.
-   */
-  if (localStorage.getItem(notificationKey)) {
-    return;
-  }
-
-  localStorage.setItem(notificationKey, "sent");
-
-  const label = prayerLabels[prayer];
-
-  new Notification(`🔔 ${label} Prayer Soon`, {
-    body: `${label} prayer starts at ${time}.`,
-    tag: notificationKey,
-  });
-}
-
-useEffect(() => {
-  if (!notificationsEnabled) {
-    return;
-  }
-
-  if (notificationPermission !== "granted") {
-    return;
-  }
-
-  /*
-   * Check immediately.
-   */
-  checkPrayerNotifications();
-
-  /*
-   * Then check every 15 seconds.
-   */
-  const scheduler = setInterval(() => {
-    checkPrayerNotifications();
-  }, 15_000);
-
-  return () => {
-    clearInterval(scheduler);
-  };
-}, [
-  notificationsEnabled,
-  notificationPermission,
-  reminderMinutes,
-  selectedPrayers,
-  prayerData,
-]);
   /*
    * --------------------------------------------------
    * LOAD PRAYER TIMES + SUPABASE REALTIME
@@ -528,11 +472,11 @@ useEffect(() => {
 
       setPrayerData({
         fajr: data.fajr,
-        zuhr: data.zuhr,
+        zuhar: data.zuhar,
         asr: data.asr,
-        maghrib: data.maghrib,
+        magrib: data.magrib,
         isha: data.isha,
-        jumuah: data.jumuah,
+        jumah: data.jumah,
         sahr: data.sahr,
         iftar: data.iftar,
         tomorrow: data.tomorrow,
@@ -560,11 +504,11 @@ useEffect(() => {
 
           setPrayerData({
             fajr: data.fajr,
-            zuhr: data.zuhr,
+            zuhar: data.zuhar,
             asr: data.asr,
-            maghrib: data.maghrib,
+            magrib: data.magrib,
             isha: data.isha,
-            jumuah: data.jumuah,
+            jumah: data.jumah,
             sahr: data.sahr,
             iftar: data.iftar,
             tomorrow: data.tomorrow,
@@ -629,9 +573,9 @@ const gregorianYear = now
       color: "green",
     },
     {
-      name: "ZUHR",
+      name: "ZUHAR",
       arabic: "ظہر",
-      time: prayerData.zuhr,
+      time: prayerData.zuhar,
       color: "green",
     },
     {
@@ -641,13 +585,13 @@ const gregorianYear = now
       color: "green",
     },
     {
-      name: "MAGHRIB",
+      name: "MAGRIB",
       arabic: "مغرب",
-      time: prayerData.maghrib,
+      time: prayerData.magrib,
       color: "green",
     },
     {
-      name: "ISHA'",
+      name: "ISHA",
       arabic: "عشاء",
       time: prayerData.isha,
       color: "green",
@@ -655,7 +599,7 @@ const gregorianYear = now
     {
       name: "JUM'AH",
       arabic: "جمعۃ",
-      time: prayerData.jumuah,
+      time: prayerData.jumah,
       color: "green",
     },
   ];
@@ -669,13 +613,13 @@ const gregorianYear = now
         {/* HEADER */}
 
         <header className="board-header">
-          <div className="round-logo">مُحَمَّد</div>
+          <div className="round-logo arabic-muhammad">مُحَمَّد</div>
 
           <div className="arabic-title">
             لَا إِلَٰهَ إِلَّا ٱللَّٰهُ مُحَمَّدٌ رَسُولُ ٱللَّٰهِ
           </div>
 
-          <div className="round-logo">ﷲ</div>
+          <div className="round-logo arabic-allah">ﷲ</div>
         </header>
 
         <div className="board-main">
@@ -723,8 +667,8 @@ const gregorianYear = now
             </div>
 
             <div className="mini-row">
-              <span>TAULU' start</span>
-              <strong>{boardData.tauluTime}</strong>
+              <span>TULU' start</span>
+              <strong>{boardData.tuluTime}</strong>
               <span>طلوع</span>
             </div>
 
@@ -775,7 +719,7 @@ const gregorianYear = now
               </div>
 
               <div className="current-time">
-                {prayerData.zuhr}
+                {prayerData.zuhar}
               </div>
 
               <div className="jamaat-label">
@@ -786,7 +730,7 @@ const gregorianYear = now
                 <span>🔊 AZAN</span>
 
                 <strong>
-                  {prayerData.zuhr}
+                  {prayerData.zuhar}
                 </strong>
               </div>
 
@@ -917,15 +861,25 @@ const gregorianYear = now
       <div className="notification-option-group">
         <h3>Reminder time</h3>
 
-        <select
-          value={reminderMinutes}
-          onChange={(e) => setReminderMinutes(e.target.value)}
-        >
-          <option value="5">5 minutes before</option>
-          <option value="10">10 minutes before</option>
-          <option value="15">15 minutes before</option>
-          <option value="30">30 minutes before</option>
-        </select>
+
+<select
+  value={reminderMinutes}
+  onChange={(e) => {
+    const value = e.target.value;
+    setReminderMinutes(value);
+    void savePreferences(value, selectedPrayers);
+  }}
+>
+  <option value="5">5 minutes before</option>
+  <option value="10">10 minutes before</option>
+  <option value="15">15 minutes before</option>
+  <option value="30">30 minutes before</option>
+</select>
+
+{preferencesSaving && (
+  <small>Saving notification preferences…</small>
+)}
+
       </div>
 
       <div className="notification-option-group">
@@ -945,10 +899,10 @@ const gregorianYear = now
           <label>
             <input
               type="checkbox"
-              checked={selectedPrayers.zuhr}
-              onChange={() => togglePrayer("zuhr")}
+              checked={selectedPrayers.zuhar}
+              onChange={() => togglePrayer("zuhar")}
             />
-            Zuhr
+            Zuhar
           </label>
 
           <label>
@@ -963,10 +917,10 @@ const gregorianYear = now
           <label>
             <input
               type="checkbox"
-              checked={selectedPrayers.maghrib}
-              onChange={() => togglePrayer("maghrib")}
+              checked={selectedPrayers.magrib}
+              onChange={() => togglePrayer("magrib")}
             />
-            Maghrib
+            Magrib
           </label>
 
           <label>
@@ -975,16 +929,16 @@ const gregorianYear = now
               checked={selectedPrayers.isha}
               onChange={() => togglePrayer("isha")}
             />
-            Isha'
+            Isha
           </label>
 
           <label>
             <input
               type="checkbox"
-              checked={selectedPrayers.jumuah}
-              onChange={() => togglePrayer("jumuah")}
+              checked={selectedPrayers.jumah}
+              onChange={() => togglePrayer("jumah")}
             />
-            Jumu'ah
+            Jumah
           </label>
 
         </div>
@@ -995,11 +949,11 @@ const gregorianYear = now
       <span>Preview</span>
 
       <strong>
-        🔔 Zuhr Prayer Soon
+        🔔 Zuhar Prayer Soon
       </strong>
 
       <p>
-        Zuhr prayer starts at {prayerData.zuhr}.
+        Zuhar prayer starts at {prayerData.zuhar}.
         Jama'at timing will be added in the next step.
       </p>
     </div>
@@ -1007,10 +961,10 @@ const gregorianYear = now
 )}
 
       <div className="mobile-note">
-        <strong>AL REHMAN Masjid Live Board</strong>
+        <strong>Powered by MAPOS</strong>
 
         <span>
-          Powered by MAPOS.
+          8494001112
         </span>
       </div>
 

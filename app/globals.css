@@ -125,6 +125,14 @@ body {
   margin: 2px 0 8px;
 }
 
+.arabic-muhammad {
+  font-size: 27px;
+}
+
+.arabic-allah {
+  font-size: 32px;
+}
+
 .current-prayer {
   color: var(--lime);
   text-align: center;
