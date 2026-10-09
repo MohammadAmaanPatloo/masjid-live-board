@@ -174,14 +174,23 @@ const { data: prayerBoard, error: prayerBoardError } = await supabase
       });
     }
     
+
+const indiaDay = new Intl.DateTimeFormat("en-US", {
+  timeZone: "Asia/Kolkata",
+  weekday: "long",
+}).format(now);
+
+const isFriday = indiaDay === "Friday";
+
 const prayers = [
-  { key: "fajr", name: "Fajr", enabledKey: "fajr" },
-  { key: "zuhar", name: "Zuhar", enabledKey: "zuhar" },
-  { key: "asr", name: "Asr", enabledKey: "asr" },
-  { key: "magrib", name: "Magrib", enabledKey: "magrib" },
-  { key: "isha", name: "Isha", enabledKey: "isha" },
-  { key: "jumah", name: "Jumah", enabledKey: "jumah" },
+  { key: "fajr", name: "Fajr" },
+  { key: "zuhar", name: "Zuhar" },
+  { key: "asr", name: "Asr" },
+  { key: "magrib", name: "Magrib" },
+  { key: "isha", name: "Isha" },
+  { key: "jumah", name: "Jumah" },
 ] as const;
+
 
     let sentCount = 0;
 
@@ -193,21 +202,44 @@ const prayers = [
         /*
          * Is this prayer enabled for this user?
          */
-        const enabled =
-          subscription[prayer.key] === true;
 
-        if (!enabled) {
-          continue;
-        }
+if (prayer.key === "jumah") {
+  // Jumah reminders are only for Fridays.
+  if (!isFriday) continue;
 
-        const prayerTime =
-          prayerBoard[prayer.key];
+  // On Friday, Jumah replaces Zuhar.
+} else {
+  // Never send the Zuhar reminder on Friday.
+  if (prayer.key === "zuhar" && isFriday) {
+    continue;
+  }
+}
+
+const enabled = subscription[prayer.key] === true;
+
+if (!enabled) continue;
+
+// Jumah uses the Zuhar prayer time.
+const prayerTime =
+  prayer.key === "jumah"
+    ? prayerBoard.zuhar
+    : prayerBoard[prayer.key];
+
 
         if (!prayerTime) {
           continue;
         }
 
-        const parsed = parseTime(String(prayerTime));
+        let timeToParse = String(prayerTime).trim();
+
+// Fajr is AM; all other prayer times are PM.
+if (prayer.key === "fajr") {
+  timeToParse = `${timeToParse} AM`;
+} else {
+  timeToParse = `${timeToParse} PM`;
+}
+
+const parsed = parseTime(timeToParse);
 
         if (!parsed) {
           console.warn(

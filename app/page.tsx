@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "../lib/supabase-browser";
 
 const boardData = {
-  masjidName: "MASJID LIVE BOARD",
+  masjidName: "AL REHMAN MASJID",
 
   hijriDay: "25",
   hijriMonth: "3",
@@ -598,7 +598,7 @@ const gregorianYear = now
     },
     {
       name: "JUM'AH",
-      arabic: "جمعۃ",
+      arabic: "جمعہ",
       time: prayerData.jumah,
       color: "green",
     },
@@ -654,7 +654,7 @@ const gregorianYear = now
             </div>
 
             <div className="sun-labels">
-              <span>اذان START</span>
+              <span>START</span>
               <span>END</span>
             </div>
 
@@ -667,7 +667,7 @@ const gregorianYear = now
             </div>
 
             <div className="mini-row">
-              <span>TULU' start</span>
+              <span>TULU start</span>
               <strong>{boardData.tuluTime}</strong>
               <span>طلوع</span>
             </div>
@@ -708,36 +708,66 @@ const gregorianYear = now
               {boardData.masjidName}
             </div>
 
-            <div className="tagline">
-              Prayer &amp; Jama'at timings
-            </div>
+            
+<div className="tagline">
+  Prayer &amp; Jama'at Information
+</div>
 
-            <div className="current-box">
+<div className="prayer-verse">
+  <p className="verse-english">
+    Verily, As-Salaat (prayer) is enjoined on the believers at fixed hours.
+  </p>
+  <p className="verse-urdu" lang="ur" dir="rtl">
+    بے شک نماز مومنوں پر مقررہ اوقات میں فرض کی گئی ہے۔
+  </p>
+</div>
 
-              <div className="current-label">
-                {boardData.currentPrayer}
-              </div>
 
-              <div className="current-time">
-                {prayerData.zuhar}
-              </div>
 
-              <div className="jamaat-label">
-                JAMA'AT
-              </div>
 
-              <div className="azan-line">
-                <span>🔊 AZAN</span>
+      <div className="current-box">
+        {/* Row 1: Zuhar + large time */}
+        <div className="current-prayer-row">
+          <div className="current-label">
+            {boardData.currentPrayer}
+          </div>
 
-                <strong>
-                  {prayerData.zuhar}
-                </strong>
-              </div>
+          <div className="current-time">
+            {prayerData.zuhar}
+          </div>
+        </div>
 
-            </div>
+        {/* Row 2: Jama'at + Urdu */}
+        <div className="jamaat-row">
+          <span className="jamaat-english">
+            JAMA'AT
+          </span>
+
+          <span className="jamaat-urdu" lang="ur" dir="rtl">
+            جماعت
+          </span>
+        </div>
+
+        {/* Row 3: Azan + time + Urdu */}
+        <div className="azan-row">
+          <span className="azan-english">
+            <span className="azan-icon">🔊</span>
+            AZAN
+          </span>
+
+          <strong className="azan-time">
+            {prayerData.zuhar}
+          </strong>
+
+          <span className="azan-urdu" lang="ur" dir="rtl">
+            اذان
+          </span>
+        </div>
+      </div>
+
+
 
           </section>
-
           {/* RIGHT PANEL */}
 
           <aside className="right-panel">
@@ -778,7 +808,7 @@ const gregorianYear = now
             <div className="special-row">
               <span>TOMORROW</span>
               <strong>{prayerData.tomorrow}</strong>
-              <span>اگلے دن</span>
+              <span>کل</span>
             </div>
 
           </aside>
@@ -788,7 +818,7 @@ const gregorianYear = now
         {/* FOOTER */}
 
         <footer className="board-footer">
-          <span>🕌 AL REHMAN MASJID PRAYER &amp; JAMA'AT INFORMATION</span>
+          <span>🕌 AL REHMAN MASJID-SIR SYED COLONY UPPER SOURA-SRINAGAR</span>
 
           <button
             className="notification-button"
@@ -803,7 +833,7 @@ const gregorianYear = now
             ADMIN
           </a>
 
-          <span>LIVE</span>
+          
         </footer>
 
       </section>
